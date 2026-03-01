@@ -1,14 +1,22 @@
 #!/usr/bin/env node
 /**
- * go.mjs — Zero-friction interactive wizard for ChatGPT → Claude migration
+ * go.mjs — ChatGPT → Claude migration tool
  *
- * Usage:
- *   npm start          (or:  node go.mjs)
+ * Automatic mode (default):
+ *   npm start          Exports everything, migrates, categorizes, uploads to Claude Projects
+ *   node go.mjs        Same thing
+ *
+ * Interactive mode:
+ *   npm run menu       Pick individual steps from a menu
+ *   node go.mjs --menu
  *
  * Guides you through:
  *   1. Playwright setup (auto-installs chromium if missing)
  *   2. ChatGPT login (first time)
- *   3. Export + migrate with menu options
+ *   3. Export everything from ChatGPT
+ *   4. Convert to Claude format (CLAUDE.md, memory-import.txt, conversations)
+ *   5. Categorize conversations into project bundles
+ *   6. Upload to claude.ai Projects
  */
 
 import { createInterface } from "readline";
@@ -320,10 +328,144 @@ function printNextSteps(item) {
 }
 
 // ---------------------------------------------------------------------------
+// Automatic mode — runs full pipeline end-to-end
+// ---------------------------------------------------------------------------
+
+async function runAutomatic() {
+  header("ChatGPT → Claude  Full Migration");
+
+  info(`Working directory: ${__dirname}\n`);
+
+  // Step 1: Playwright
+  await ensurePlaywright();
+  console.log();
+
+  // Step 2: ChatGPT login
+  if (!hasSession()) {
+    await doLogin();
+  } else {
+    ok("Saved ChatGPT session found");
+  }
+  console.log();
+
+  // Step 3: Export everything from ChatGPT
+  header("Step 1/4 — Exporting from ChatGPT");
+  info("This extracts memories, instructions, GPTs, conversations, and your implicit profile.");
+  info("Large accounts may take 10-30 minutes.\n");
+  await runLive("node", ["export.mjs"]);
+  ok("Export complete");
+  console.log();
+
+  // Step 4: Migrate to Claude format
+  header("Step 2/4 — Converting to Claude format");
+  info("Generating CLAUDE.md, memory-import.txt, and conversation markdown.\n");
+  await runLive("node", ["migrate.mjs"]);
+  ok("Migration complete");
+  console.log();
+
+  // Step 5: Categorize into project bundles
+  header("Step 3/4 — Categorizing conversations into project bundles");
+  info("Grouping conversations by topic for Claude Projects.\n");
+  await runLive("node", ["categorize.mjs"]);
+  ok("Categorization complete");
+  console.log();
+
+  // Step 6: Upload to Claude Projects
+  header("Step 4/4 — Uploading to Claude Projects");
+  info("Creating projects on claude.ai and uploading conversation files.\n");
+  await runLive("node", ["upload.mjs"]);
+  ok("Upload complete");
+  console.log();
+
+  // Final summary
+  printAutoSummary();
+}
+
+function printAutoSummary() {
+  header("Migration Complete!");
+
+  const outputDir = path.join(__dirname, "claude-import");
+  const projectsDir = path.join(__dirname, "claude-projects");
+
+  // Count what was created
+  let convoCount = 0;
+  const byDateDir = path.join(outputDir, "conversations", "by-date");
+  if (fs.existsSync(byDateDir)) {
+    const months = fs.readdirSync(byDateDir).filter((d) => !d.startsWith("."));
+    for (const m of months) {
+      const files = fs.readdirSync(path.join(byDateDir, m)).filter((f) => f.endsWith(".md"));
+      convoCount += files.length;
+    }
+  }
+
+  let bundleCount = 0;
+  const manifestPath = path.join(projectsDir, "_manifest.json");
+  if (fs.existsSync(manifestPath)) {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8"));
+    bundleCount = manifest.bundles?.length || 0;
+  }
+
+  console.log(`  ${paint(c.green + c.bold, "What was created:")}\n`);
+
+  if (fs.existsSync(path.join(outputDir, "CLAUDE.md"))) {
+    console.log(`  ${paint(c.cyan, "CLAUDE.md")}           Your profile, memories, and preferences for Claude Code`);
+  }
+  if (fs.existsSync(path.join(outputDir, "memory-import.txt"))) {
+    console.log(`  ${paint(c.cyan, "memory-import.txt")}   Memories formatted for claude.ai Settings → Memory`);
+  }
+  if (convoCount > 0) {
+    console.log(`  ${paint(c.cyan, `${convoCount} conversations`)}   Organized by date and topic in markdown`);
+  }
+  if (bundleCount > 0) {
+    console.log(`  ${paint(c.cyan, `${bundleCount} Claude Projects`)}  Uploaded to claude.ai with conversation files`);
+  }
+
+  console.log(`\n  ${paint(c.green + c.bold, "Set up Claude Code (one-time):")}\n`);
+  console.log(`  ${paint(c.cyan, "1.")}  Copy your profile to Claude Code's global memory:\n`);
+  console.log(`     ${paint(c.bold, "cp claude-import/CLAUDE.md ~/.claude/CLAUDE.md")}\n`);
+  console.log(`     This gives Claude Code your preferences, skills, and working style`);
+  console.log(`     in every session, across all projects.\n`);
+
+  console.log(`  ${paint(c.green + c.bold, "Set up claude.ai memories (one-time):")}\n`);
+  console.log(`  ${paint(c.cyan, "2.")}  Open ${paint(c.bold, "claude-import/memory-import.txt")}`);
+  console.log(`     Copy the contents → go to claude.ai → Settings → Memory → paste\n`);
+
+  console.log(`  ${paint(c.green + c.bold, "To update later (pick up new ChatGPT conversations):")}\n`);
+  console.log(`  ${paint(c.cyan, "3.")}  Re-run anytime to export new conversations and update everything:\n`);
+  console.log(`     ${paint(c.bold, "npm start")}\n`);
+  console.log(`     This will re-export from ChatGPT, re-migrate, re-categorize,`);
+  console.log(`     and upload any new project bundles. Already-uploaded projects`);
+  console.log(`     are skipped automatically.\n`);
+
+  console.log(`  ${paint(c.dim, "Individual steps:")}`);
+  console.log(`  ${paint(c.dim, "  npm run export      Just re-export from ChatGPT")}`);
+  console.log(`  ${paint(c.dim, "  npm run migrate     Just re-convert to Claude format")}`);
+  console.log(`  ${paint(c.dim, "  npm run categorize  Just re-categorize conversations")}`);
+  console.log(`  ${paint(c.dim, "  npm run upload      Just upload pending bundles")}`);
+  console.log(`  ${paint(c.dim, "  npm run menu        Interactive menu with all options")}`);
+  console.log(`  ${paint(c.dim, "  npm run search      Search your conversation history")}`);
+  console.log();
+
+  console.log(`  ${paint(c.dim, "All output files:  " + outputDir)}`);
+  if (bundleCount > 0) {
+    console.log(`  ${paint(c.dim, "Project bundles:   " + projectsDir)}`);
+  }
+  console.log();
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
+const INTERACTIVE = process.argv.includes("--menu");
+
 async function main() {
+  if (!INTERACTIVE) {
+    await runAutomatic();
+    return;
+  }
+
+  // Interactive menu mode
   header("ChatGPT → Claude Migration Wizard");
 
   info(`Working directory: ${__dirname}\n`);

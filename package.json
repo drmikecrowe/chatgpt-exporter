@@ -5,7 +5,7 @@
   "description": "Export everything from ChatGPT and migrate it to Claude",
   "scripts": {
     "start": "node go.mjs",
-    "go": "node go.mjs",
+    "menu": "node go.mjs --menu",
     "export": "node export.mjs",
     "migrate": "node migrate.mjs",
     "full": "node export.mjs && node migrate.mjs",

@@ -1,12 +1,36 @@
 # ChatGPT → Claude Migrator
 
-> Export **everything** from your ChatGPT account and migrate it to Claude — memories, instructions, GPTs, conversations, and a deep AI-generated profile of who you are.
+> Export **everything** from your ChatGPT account and migrate it to Claude — memories, instructions, GPTs, conversations, and a deep AI-generated profile of who you are. Uploads it all to Claude Projects automatically.
 
 ---
 
-## What it does
+## Quickstart
 
-ChatGPT holds years of context about you: explicit memories, custom instructions, thousands of conversations — and implicit knowledge that was never written down. This tool captures all of it and converts it into formats Claude can use immediately.
+```bash
+git clone https://github.com/gneitzke/chatgpt-exporter.git
+cd chatgpt-exporter
+npm install
+npm start
+```
+
+`npm start` runs the full pipeline automatically:
+
+1. Installs Playwright Chromium (if needed)
+2. Opens a browser for ChatGPT login (first time only)
+3. Exports everything — memories, instructions, GPTs, conversations, implicit profile
+4. Converts to Claude format — `CLAUDE.md`, `memory-import.txt`, markdown conversations
+5. Categorizes conversations into ~20 topic-based bundles
+6. Uploads all bundles to claude.ai Projects
+
+When it finishes, you get clear instructions on what to do next.
+
+### To update later
+
+Just run `npm start` again. It re-exports from ChatGPT, re-migrates, re-categorizes, and uploads any new bundles. Already-uploaded projects are skipped.
+
+---
+
+## What it exports
 
 | Data | Export file | Claude output |
 |---|---|---|
@@ -24,95 +48,52 @@ ChatGPT holds years of context about you: explicit memories, custom instructions
 
 ---
 
-## Quickstart
+## After migration — set up Claude
+
+### Claude Code (one-time)
 
 ```bash
-git clone <repo>
-cd chatgpt-exporter
-npm install
-npm start
+cp claude-import/CLAUDE.md ~/.claude/CLAUDE.md
 ```
 
-`npm start` launches the interactive wizard — it handles everything from Playwright setup to login to export and migration.
+This gives Claude Code your preferences, skills, and working style in every session.
+
+### claude.ai memories (one-time)
+
+1. Open `claude-import/memory-import.txt`
+2. Go to **Settings → Memory** on claude.ai
+3. Paste the content to seed Claude's memory
+
+### Claude Projects (automatic)
+
+The upload step creates ~20 topic-based projects on claude.ai (AI & LLMs, Programming, Animals, etc.) with your conversation history as project knowledge. These are browsable in Claude chat.
+
+### Custom GPTs → Claude Projects
+
+Each `claude-import/projects/<gpt-name>/CLAUDE.md` contains an adapted system prompt. Create a new Project in claude.ai and paste as Custom Instructions.
 
 ---
 
-## Manual usage
+## Scripts
 
-### 1. Install
-
-```bash
-npm install
-```
-
-Playwright's Chromium browser is installed automatically on first run. You can also install it manually:
-
-```bash
-npx playwright install chromium
-```
-
-### 2. Log in (first time only)
-
-```bash
-node export.mjs --login
-# or
-npm run login
-```
-
-A Chromium window opens. Log in to ChatGPT. Your session is saved to `.chatgpt-profile/` — you won't need to log in again unless you clear it.
-
-### 3. Export from ChatGPT
-
-```bash
-node export.mjs          # Export everything
-npm run export
-
-# Selective:
-node export.mjs --memories     # Only memories
-node export.mjs --convos       # Only conversations
-node export.mjs --archived     # Only archived conversations
-node export.mjs --profile      # Only implicit profile (14-prompt battery)
-```
-
-Output goes to `export/`.
-
-### 4. Migrate to Claude
-
-```bash
-node migrate.mjs         # Full migration
-npm run migrate
-
-# Selective:
-node migrate.mjs --memories         # memories → memory-import.txt
-node migrate.mjs --instructions     # custom instructions → CLAUDE.md
-node migrate.mjs --gpts             # GPTs → projects/
-node migrate.mjs --convos           # conversations → markdown
-node migrate.mjs --profile          # implicit profile → CLAUDE.md + memory-import.txt
-node migrate.mjs --max-convos 100   # limit conversations processed
-node migrate.mjs --dry-run          # preview without writing files
-```
-
-Output goes to `claude-import/`.
-
-### Do it all at once
-
-```bash
-npm run full
-# equivalent to: node export.mjs && node migrate.mjs
-```
+| Command | What it does |
+|---------|-------------|
+| `npm start` | **Full automatic migration** — export, convert, categorize, upload |
+| `npm run menu` | Interactive menu — pick individual steps |
+| `npm run export` | Just export from ChatGPT |
+| `npm run migrate` | Just convert exports to Claude format |
+| `npm run categorize` | Just categorize conversations into bundles |
+| `npm run upload` | Just upload pending bundles to Claude Projects |
+| `npm run search` | Search your exported conversation history |
+| `npm run login` | Just open browser for ChatGPT login |
+| `npm run profile` | Just run implicit profile extraction |
+| `npm run full` | Export + migrate (no upload) |
 
 ---
 
 ## Implicit Profile Extraction
 
 The most powerful feature. ChatGPT holds implicit knowledge about you — inferred preferences, behavioral patterns, skill levels, blind spots — that was never explicitly written to your memories. The only way to surface it is to ask directly with carefully crafted prompts.
-
-```bash
-node export.mjs --profile
-node migrate.mjs --profile
-# or both at once:
-npm run profile
-```
 
 This fires a **14-prompt battery** in a single ChatGPT conversation:
 
@@ -133,42 +114,6 @@ This fires a **14-prompt battery** in a single ChatGPT conversation:
 | 13 | JSON dump | Structured object: skills, traits, values, projects, preferences |
 | 14 | Synthesis close | 10 bullets — the things any AI working with you most needs to know |
 
-**What you get:**
-
-- `export/implicit_profile.json` — 14 Q&A pairs, raw
-- `CLAUDE.md` — **Quick Reference** section at the top (10 bullets from prompt #14), full Q&A profile at the bottom
-- `memory-import.txt` — facts from the JSON dump (prompt #13) appended as an "Inferred Profile" category
-
----
-
-## Import into Claude
-
-### Claude Code (global memory)
-
-```bash
-cp claude-import/CLAUDE.md ~/.claude/CLAUDE.md
-```
-
-Claude Code reads this file automatically at the start of every session.
-
-### claude.ai / mobile app
-
-1. Open `claude-import/memory-import.txt`
-2. Go to **Settings → Memory**
-3. Paste the content to seed Claude's memory
-
-### Custom GPTs → Claude Projects
-
-Each `claude-import/projects/<gpt-name>/CLAUDE.md` contains an adapted system prompt (ChatGPT/OpenAI references rewritten for Claude).
-
-1. Create a new Project in claude.ai
-2. Paste the file contents as **Custom Instructions**
-
-### Conversation history
-
-- Browse `claude-import/conversations/by-topic/` or `by-date/`
-- Upload relevant markdown files to a Claude Project as reference context
-
 ---
 
 ## Output structure
@@ -178,76 +123,49 @@ export/                              # Raw ChatGPT data (JSON)
 ├── memories.json
 ├── custom_instructions.json
 ├── user_info.json
-├── model_config.json
 ├── custom_gpts.json
-├── shared_links.json
-├── folders.json
-├── conversations_list.json
-├── archived_conversations_list.json
-├── implicit_profile.json            # 14 Q&A pairs from profile extraction
+├── implicit_profile.json
 └── conversations/
-    └── <title>_<id>.json           # Full conversation data
+    └── <title>_<id>.json
 
-claude-import/                       # Ready-to-use Claude files
-├── CLAUDE.md                        # Master file — Quick Reference + memories + profile
-├── memory-import.txt                # Paste into claude.ai / mobile memory settings
+claude-import/                       # Claude-ready files
+├── CLAUDE.md                        # Master profile — copy to ~/.claude/CLAUDE.md
+├── memory-import.txt                # Paste into claude.ai memory settings
 ├── projects/
-│   └── <gpt-name>/
-│       └── CLAUDE.md               # Adapted GPT system prompt
-├── conversations/
-│   ├── by-date/
-│   │   └── YYYY-MM/
-│   │       └── <title>.md
-│   └── by-topic/
-│       └── <category>.md
-└── metadata/
-    └── migration-report.json        # Stats + audit trail
+│   └── <gpt-name>/CLAUDE.md        # Adapted GPT system prompts
+└── conversations/
+    ├── by-date/YYYY-MM/*.md
+    └── by-topic/<category>.md
+
+claude-projects/                     # Upload bundles for claude.ai Projects
+├── _manifest.json                   # Upload status tracking (resumable)
+├── 01-3D-Printing-CAD/
+│   ├── _project.json
+│   ├── _README.md
+│   └── *.md                        # Conversation files
+├── 02-AI-LLMs-Part-1/
+└── ...
 ```
 
 ---
 
-## Interactive wizard (`go.mjs`)
+## Topic categories
 
-`npm start` launches a color-coded interactive menu:
+Conversations are automatically categorized into 15 topics (plus General):
 
-```
-┌─────────────────────────────────────────┐
-│  ChatGPT → Claude Migration Wizard      │
-└─────────────────────────────────────────┘
+AI & LLMs, GPU & Compute, Programming & Code, Networking & Infra, Hardware & Electronics, 3D Printing & CAD, Solar & Energy, Animals & Livestock, Gardening & Outdoors, Food & Cooking, Home & Property, Health & Fitness, Work & Leadership, Image Generation, Writing & Content
 
-  [1]  Full migration
-       Export everything + implicit profile + convert to Claude
-
-  [2]  Quick migration
-       Memories + custom instructions only (fastest)
-
-  [3]  Export only
-       Raw JSON dump to export/ — no Claude conversion
-
-  [4]  Migrate only
-       Already exported? Just convert to Claude format
-
-  [5]  Implicit profile
-       14-prompt AI probing battery only
-
-  [6]  Re-login
-       Clear saved session and log in again
-```
-
-- Auto-installs Playwright Chromium if missing
-- Detects saved session — skips login if already authenticated
-- Streams live command output
-- Prints exact copy-paste next steps when done
-- Works on Mac, Linux, and Windows Terminal / PowerShell 7
+Categories exceeding 180k tokens are split into parts (e.g., "AI & LLMs Part 1", "AI & LLMs Part 2") to stay within Claude's project knowledge limit.
 
 ---
 
 ## Notes
 
-- Runs **headful** (visible browser window) so you can monitor progress and handle CAPTCHAs if needed
-- Rate limiting: small delays between API calls to stay well under ChatGPT's limits
+- Uses Playwright's **bundled Chromium** — no need to have Chrome installed
+- Runs **headful** (visible browser window) so you can monitor progress and handle CAPTCHAs
+- Rate limiting: small delays between API calls to stay under ChatGPT's limits
 - Large accounts (1000+ conversations) may take 10–30 minutes to export
 - The migrate step works **offline** — reads from `export/`, no browser needed
 - Re-running export won't overwrite existing conversation files
-- The implicit profile extraction uses a single conversation thread so ChatGPT has context of previous answers as it goes deeper
-- ChatGPT's internal API is undocumented and may change — open an issue if selectors break
+- Claude Project uploads are **resumable** — if it fails partway, re-run to continue
+- Separate browser profiles for ChatGPT (`.chatgpt-profile/`) and Claude (`.claude-profile/`)
