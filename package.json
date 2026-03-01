@@ -1,0 +1,24 @@
+{
+  "name": "chatgpt-exporter",
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Export everything from ChatGPT and migrate it to Claude",
+  "scripts": {
+    "start": "node go.mjs",
+    "go": "node go.mjs",
+    "export": "node export.mjs",
+    "migrate": "node migrate.mjs",
+    "full": "node export.mjs && node migrate.mjs",
+    "login": "node export.mjs --login",
+    "profile": "node export.mjs --profile && node migrate.mjs --profile",
+    "search": "node search.mjs",
+    "categorize": "node categorize.mjs",
+    "upload": "node upload.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}

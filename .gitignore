@@ -1,0 +1,20 @@
+node_modules/
+
+# Browser profiles (session cookies, auth tokens)
+.chatgpt-profile/
+.claude-profile/
+
+# Exported personal data
+export/
+claude-import/
+claude-projects/
+
+# Claude Code
+.claude/
+
+# Clubhouse
+.clubhouse/
+
+# Debug artifacts
+debug-*.png
+debug-*.mjs
