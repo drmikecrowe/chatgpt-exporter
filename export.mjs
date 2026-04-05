@@ -69,11 +69,13 @@ async function launch() {
 // ---------------------------------------------------------------------------
 function isOnChatPage(url) {
   // Must be on chatgpt.com but NOT on an auth callback or intermediate URL
-  return url.startsWith(BASE) &&
+  return (
+    url.startsWith(BASE) &&
     !url.includes("/auth") &&
     !url.includes("/callback") &&
     !url.includes("/login") &&
-    !url.includes("/email-verification");
+    !url.includes("/email-verification")
+  );
 }
 
 async function waitForChatReady(page, { timeoutMs = 180_000, message = "", navigate = true } = {}) {
@@ -93,7 +95,7 @@ async function waitForChatReady(page, { timeoutMs = 180_000, message = "", navig
   // ChatGPT has a hidden fallback <textarea> that matches even when the real
   // contenteditable composer isn't ready yet.
   const composerSelector = [
-    '#prompt-textarea',
+    "#prompt-textarea",
     '[id="composer-background"]',
     'div[contenteditable="true"][id="prompt-textarea"]',
   ].join(", ");
@@ -133,17 +135,14 @@ async function waitForChatReady(page, { timeoutMs = 180_000, message = "", navig
     // Stabilization: wait 3s, then confirm we're still here
     await page.waitForTimeout(3000);
 
-    if (isOnChatPage(page.url()) && await page.$(composerSelector)) {
+    if (isOnChatPage(page.url()) && (await page.$(composerSelector))) {
       return true;
     }
     // Redirected after stabilization — loop back
     console.log(`  ⏳ Page changed during stabilization, retrying...`);
   }
 
-  throw new Error(
-    "Timed out waiting for ChatGPT chat UI. " +
-    "Please complete login, 2FA, or email verification in the browser."
-  );
+  throw new Error("Timed out waiting for ChatGPT chat UI. " + "Please complete login, 2FA, or email verification in the browser.");
 }
 
 // ---------------------------------------------------------------------------
@@ -217,13 +216,16 @@ async function apiGet(page, endpoint) {
   const token = await getAccessToken(page);
 
   const doFetch = (bearerToken) =>
-    page.evaluate(async ({ url, bt }) => {
-      const headers = {};
-      if (bt) headers["Authorization"] = `Bearer ${bt}`;
-      const res = await fetch(url, { credentials: "include", headers });
-      if (!res.ok) throw new Error(`API ${res.status}: ${url}`);
-      return res.json();
-    }, { url: `${BASE}/backend-api${endpoint}`, bt: bearerToken });
+    page.evaluate(
+      async ({ url, bt }) => {
+        const headers = {};
+        if (bt) headers["Authorization"] = `Bearer ${bt}`;
+        const res = await fetch(url, { credentials: "include", headers });
+        if (!res.ok) throw new Error(`API ${res.status}: ${url}`);
+        return res.json();
+      },
+      { url: `${BASE}/backend-api${endpoint}`, bt: bearerToken },
+    );
 
   try {
     return await doFetch(token);
@@ -269,9 +271,7 @@ async function exportMemoriesAPI(page) {
   let page_num = 0;
 
   while (true) {
-    const qs = cursor
-      ? `?limit=${pageSize}&cursor=${encodeURIComponent(cursor)}`
-      : `?limit=${pageSize}`;
+    const qs = cursor ? `?limit=${pageSize}&cursor=${encodeURIComponent(cursor)}` : `?limit=${pageSize}`;
 
     const data = await apiGet(page, `/memories${qs}`);
 
@@ -299,7 +299,7 @@ async function exportMemoriesAPI(page) {
     if (!hasMore || !cursor) break;
 
     page_num++;
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(2000);
 
     // Safety valve — shouldn't need more than 50 pages of 100
     if (page_num > 50) {
@@ -418,20 +418,19 @@ async function autoScroll(page, containerSelector) {
 async function exportCustomInstructions(page) {
   console.log("📝 Exporting custom instructions...");
 
-  const endpoints = [
-    "/user_system_messages",
-    "/personalization",
-    "/user_system_messages/latest",
-  ];
+  const endpoints = ["/user_system_messages", "/personalization", "/user_system_messages/latest"];
 
   for (const endpoint of endpoints) {
     try {
       const data = await apiGet(page, endpoint);
       // Check if we actually got content (not just an empty shell)
-      const hasContent = data &&
-        (data.about_user_message || data.about_model_message ||
-         data.custom_instructions || data.user_instructions ||
-         Object.keys(data).length > 2);
+      const hasContent =
+        data &&
+        (data.about_user_message ||
+          data.about_model_message ||
+          data.custom_instructions ||
+          data.user_instructions ||
+          Object.keys(data).length > 2);
       if (hasContent) {
         save("custom_instructions.json", data);
         return data;
@@ -448,7 +447,7 @@ async function exportCustomInstructions(page) {
     await page.waitForTimeout(3000);
 
     const instructions = await page.evaluate(() => {
-      const textareas = document.querySelectorAll('textarea');
+      const textareas = document.querySelectorAll("textarea");
       const result = {};
       textareas.forEach((ta, i) => {
         const val = ta.value?.trim();
@@ -547,7 +546,7 @@ async function exportConversations(page) {
       offset += limit;
 
       // Small delay to avoid rate limiting
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(2000);
     } catch (err) {
       console.log(`  ⚠️  Error fetching conversation list at offset ${offset}: ${err.message}`);
       break;
@@ -573,11 +572,19 @@ async function exportConversations(page) {
   let exported = 0;
   let failed = 0;
 
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = 3;
   const failedConvos = [];
+  let skipped = 0;
 
   for (const convo of allConvos) {
-    let success = false;
+    const filename = `${sanitizeFilename(convo.title || convo.id)}_${convo.id.slice(0, 8)}.json`;
+    const filepath = path.join(convosDir, filename);
+
+    // Skip already-downloaded conversations
+    if (fs.existsSync(filepath)) {
+      skipped++;
+      continue;
+    }
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
@@ -596,24 +603,26 @@ async function exportConversations(page) {
           _raw_mapping: full.mapping, // keep raw data too
         };
 
-        const filename = `${sanitizeFilename(convo.title || convo.id)}_${convo.id.slice(0, 8)}.json`;
-        const filepath = path.join(convosDir, filename);
         fs.writeFileSync(filepath, JSON.stringify(out, null, 2));
 
         exported++;
-        success = true;
 
         if (exported % 25 === 0) {
-          console.log(`  ... exported ${exported}/${allConvos.length} conversations`);
+          console.log(`  ... exported ${exported}/${allConvos.length - skipped} conversations`);
         }
 
-        // Rate limit protection
-        await page.waitForTimeout(300);
+        // Rate limit protection: 1s between requests
+        await page.waitForTimeout(1000);
         break;
       } catch (err) {
-        if (attempt < MAX_RETRIES && (err.message.includes("Failed to fetch") || err.message.includes("context was destroyed"))) {
-          // Transient network error — wait and retry
-          await page.waitForTimeout(2000 * (attempt + 1));
+        const isRateLimit = err.message.includes("429");
+        const isTransient = err.message.includes("Failed to fetch") || err.message.includes("context was destroyed");
+
+        if (attempt < MAX_RETRIES && (isRateLimit || isTransient)) {
+          // Exponential backoff: 5s, 15s, 30s for rate limits; 2s, 4s, 6s for transient errors
+          const delay = isRateLimit ? 5000 * (attempt + 1) : 2000 * (attempt + 1);
+          console.log(`  ⏳ ${isRateLimit ? "Rate limited" : "Transient error"} on "${convo.title}" — waiting ${delay / 1000}s (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await page.waitForTimeout(delay);
           continue;
         }
         failed++;
@@ -623,7 +632,7 @@ async function exportConversations(page) {
     }
   }
 
-  console.log(`  ✅ Exported ${exported} conversations (${failed} failed)`);
+  console.log(`  ✅ Exported ${exported} conversations (${skipped} skipped, ${failed} failed)`);
   if (failedConvos.length > 0 && failedConvos.length <= 20) {
     console.log(`  Failed conversations:`);
     for (const c of failedConvos) {
@@ -747,14 +756,17 @@ async function exportArchivedConversations(page) {
     }
   }
 
-  save("archived_conversations_list.json", allArchived.map((c) => ({
-    id: c.id,
-    title: c.title,
-    create_time: c.create_time,
-    update_time: c.update_time,
-    model: c.current_model || c.default_model_slug,
-    is_archived: true,
-  })));
+  save(
+    "archived_conversations_list.json",
+    allArchived.map((c) => ({
+      id: c.id,
+      title: c.title,
+      create_time: c.create_time,
+      update_time: c.update_time,
+      model: c.current_model || c.default_model_slug,
+      is_archived: true,
+    })),
+  );
   console.log(`  📋 Found ${allArchived.length} archived conversations\n`);
   return allArchived;
 }
@@ -766,12 +778,7 @@ async function exportArchivedConversations(page) {
 async function exportConversationFolders(page) {
   console.log("📝 Exporting conversation projects/folders...");
 
-  const endpoints = [
-    "/projects",
-    "/projects?limit=100",
-    "/folders",
-    "/conversation_folders",
-  ];
+  const endpoints = ["/projects", "/projects?limit=100", "/folders", "/conversation_folders"];
 
   for (const endpoint of endpoints) {
     try {
@@ -798,17 +805,19 @@ async function exportConversationFolders(page) {
 // ---------------------------------------------------------------------------
 function extractGptsFromResponse(data) {
   const raw = data.cuts || data.list || data.items || data.gizmos || [];
-  return raw.map((g) => {
-    const info = g.resource?.gizmo || g.gizmo || g;
-    return {
-      id: info.id,
-      name: info.display?.name || info.name,
-      description: info.display?.description || info.description,
-      instructions: info.instructions,
-      created_at: info.created_at,
-      updated_at: info.updated_at,
-    };
-  }).filter((g) => g.id);
+  return raw
+    .map((g) => {
+      const info = g.resource?.gizmo || g.gizmo || g;
+      return {
+        id: info.id,
+        name: info.display?.name || info.name,
+        description: info.display?.description || info.description,
+        instructions: info.instructions,
+        created_at: info.created_at,
+        updated_at: info.updated_at,
+      };
+    })
+    .filter((g) => g.id);
 }
 
 async function exportGPTs(page) {
@@ -865,7 +874,7 @@ async function scrapeGPTsFromUI(page) {
   await page.waitForTimeout(3000);
 
   // Scroll to load all GPTs
-  await autoScroll(page, 'main');
+  await autoScroll(page, "main");
 
   const gpts = await page.evaluate(() => {
     const results = [];
@@ -878,8 +887,8 @@ async function scrapeGPTsFromUI(page) {
       if (!match || seen.has(match[1])) continue;
       seen.add(match[1]);
 
-      const name = link.querySelector("h3, [class*='title'], strong")?.textContent?.trim()
-        || link.textContent?.trim().slice(0, 100) || "";
+      const name =
+        link.querySelector("h3, [class*='title'], strong")?.textContent?.trim() || link.textContent?.trim().slice(0, 100) || "";
       const desc = link.querySelector("p, [class*='desc']")?.textContent?.trim() || "";
 
       if (name) {
@@ -943,7 +952,7 @@ async function sendMessage(page, text) {
   // ChatGPT's composer is a contenteditable <div id="prompt-textarea">, NOT a
   // <textarea>. There IS a hidden fallback <textarea> in the DOM but it's never
   // visible. We must target the contenteditable div specifically.
-  const composerSelector = '#prompt-textarea';
+  const composerSelector = "#prompt-textarea";
 
   let composer;
   try {
@@ -974,9 +983,7 @@ async function sendMessage(page, text) {
   await page.waitForTimeout(300);
 
   // Click send button
-  const sendBtn = await page.$(
-    '[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="send"]'
-  );
+  const sendBtn = await page.$('[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="send"]');
   if (sendBtn) {
     await sendBtn.click();
   } else {
@@ -987,8 +994,7 @@ async function sendMessage(page, text) {
 }
 
 async function waitForResponseComplete(page, timeoutMs = 120_000) {
-  const stopSelector =
-    '[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="stop"]';
+  const stopSelector = '[data-testid="stop-button"], button[aria-label*="Stop"], button[aria-label*="stop"]';
 
   try {
     // Wait for stop button to appear (confirms generation started), timeout 10s
@@ -1105,7 +1111,7 @@ const PROFILE_PROMPTS = [
     id: 13,
     frame: "JSON dump",
     prompt:
-      'Create a structured JSON object containing everything you know and have inferred about me. Include these keys: `personal_facts`, `professional_background`, `technical_skills` (array with name+level), `communication_preferences`, `response_format_preferences`, `active_projects`, `interests`, `blind_spots`, `personality_traits`, `inferred_values`, `misc`. Be exhaustive.',
+      "Create a structured JSON object containing everything you know and have inferred about me. Include these keys: `personal_facts`, `professional_background`, `technical_skills` (array with name+level), `communication_preferences`, `response_format_preferences`, `active_projects`, `interests`, `blind_spots`, `personality_traits`, `inferred_values`, `misc`. Be exhaustive.",
   },
   {
     id: 14,
@@ -1127,9 +1133,9 @@ async function extractImplicitProfile(page) {
   // link in the sidebar instead of navigating.
   if (/\/c\/[a-f0-9-]+/.test(page.url())) {
     const newChatLink =
-      await page.$('a[data-testid="create-new-chat-button"]') ||
-      await page.$('nav a[href="/"]') ||
-      await page.$('a[href="/"]');
+      (await page.$('a[data-testid="create-new-chat-button"]')) ||
+      (await page.$('nav a[href="/"]')) ||
+      (await page.$('a[href="/"]'));
     if (newChatLink) {
       await newChatLink.click();
       await page.waitForTimeout(2000);
